@@ -1,8 +1,14 @@
 const express = require("express");
 const router = express.Router();
 
-router.get("/", (req, res) => {
-    res.send("Expense Route Working");
-});
+const {
+    getExpenses,
+    createExpense
+} = require("../controllers/expenseController");
+
+const protect = require("../middleware/authMiddleware");
+
+router.get("/", protect, getExpenses);
+router.post("/", protect, createExpense);
 
 module.exports = router;
