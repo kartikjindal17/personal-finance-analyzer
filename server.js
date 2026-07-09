@@ -4,9 +4,10 @@ const cors = require("cors");
 
 const connectDB = require("./config/db");
 
-const expenseRoutes = require("./routes/expenseRoutes");
 const authRoutes = require("./routes/authRoutes");
+const expenseRoutes = require("./routes/expenseRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
+const categorizeRoutes = require("./routes/categorizeRoutes");
 
 dotenv.config();
 
@@ -17,28 +18,37 @@ connectDB();
 app.use(cors());
 app.use(express.json());
 
-// Root Route
 app.get("/", (req, res) => {
+
     res.json({
+
         status: "ok",
+
         message: "Expense Tracker API"
+
     });
+
 });
 
-// Health Check
 app.get("/health", (req, res) => {
+
     res.json({
+
         status: "ok"
+
     });
+
 });
 
-// Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/upload", uploadRoutes);
+app.use("/api/categorize", categorizeRoutes);
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
+
     console.log(`Server running on port ${PORT}`);
+
 });
