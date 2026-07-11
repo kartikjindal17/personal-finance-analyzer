@@ -9,6 +9,7 @@ const expenseRoutes = require("./routes/expenseRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
 const categorizeRoutes = require("./routes/categorizeRoutes");
 const insightsRoutes = require("./routes/insightsRoutes");
+const anomalyRoutes = require("./routes/anomalyRoutes");
 
 dotenv.config();
 
@@ -50,6 +51,8 @@ app.use("/api/upload", uploadRoutes);
 app.use("/api/categorize", categorizeRoutes);
 
 app.use("/api/insights", insightsRoutes);
+
+app.use("/api/anomaly", anomalyRoutes);
 
 const PORT = process.env.PORT || 3000;
 
