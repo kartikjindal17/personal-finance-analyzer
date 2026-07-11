@@ -11,6 +11,7 @@ const categorizeRoutes = require("./routes/categorizeRoutes");
 const insightsRoutes = require("./routes/insightsRoutes");
 const anomalyRoutes = require("./routes/anomalyRoutes");
 const predictionRoutes = require("./routes/predictionRoutes");
+const suggestionsRoutes = require("./routes/suggestionsRoutes");
 
 dotenv.config();
 
@@ -55,6 +56,7 @@ app.use("/api/insights", insightsRoutes);
 
 app.use("/api/anomaly", anomalyRoutes);
 app.use("/api/prediction", predictionRoutes);
+app.use("/api/suggestions", suggestionsRoutes);
 
 const PORT = process.env.PORT || 3000;
 

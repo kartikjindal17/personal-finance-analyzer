@@ -1,195 +1,269 @@
-const buildDailyFeatures = require("./features");
+const {
+    categoryConcentration,
+    recurringExpenses,
+    monthlyTrend
+} = require("./patterns");
 
-let modelMetrics = null;
+const {
+    detectAnomalies
+} = require("./anomalyDetector");
 
-const trainPredictor = (expenses) => {
+const {
+    predictNextDays
+} = require("./predictor");
 
-    const daily = buildDailyFeatures(expenses);
-
-    if (daily.length < 30) {
-        throw new Error("Need at least 30 days of data to train");
-    }
-
-    const totals = daily.map(d => d.total);
-
-    const average =
-        totals.reduce((a, b) => a + b, 0) / totals.length;
-
-    const mae =
-        totals.reduce(
-            (sum, value) => sum + Math.abs(value - average),
-            0
-        ) / totals.length;
-
-    const baselineMae = mae * 1.1;
-
-    modelMetrics = {
-
-        linear_regression: {
-
-            mae: Number(mae.toFixed(2)),
-
-            mae_pct: Number(
-                ((mae / Math.max(average, 1)) * 100).toFixed(2)
-            )
-
-        },
-
-        rolling_average_baseline: {
-
-            mae: Number(baselineMae.toFixed(2)),
-
-            mae_pct: Number(
-                ((baselineMae / Math.max(average, 1)) * 100).toFixed(2)
-            )
-
-        },
-
-        avg_daily_spend: Number(average.toFixed(2)),
-
-        train_days: Math.floor(daily.length * 0.8),
-
-        test_days: daily.length - Math.floor(daily.length * 0.8)
-
-    };
-
-    return modelMetrics;
-
+const CATEGORY_BENCHMARKS = {
+    Food: 25,
+    Shopping: 25,
+    Transport: 15,
+    Utilities: 10,
+    Subscription: 8,
+    Health: 10,
+    Entertainment: 10
 };
 
-const predictNextDays = (expenses, days = 30) => {
+const DEFAULT_BENCHMARK = 15;
+const SAVINGS_REDUCTION = 20;
 
-    const daily = buildDailyFeatures(expenses);
+const generateSuggestions = (expenses) => {
 
-    if (!daily.length) {
-
-        return {
-
-            days,
-
-            total_predicted: 0,
-
-            avg_daily_predicted: 0,
-
-            predictions: [],
-
-            message: "No expense data available."
-
-        };
-
+    if (!expenses || !expenses.length) {
+        return [];
     }
 
-    const recentDays = daily.slice(-7);
+    const suggestions = [];
 
-    const average =
-        recentDays.reduce((sum, d) => sum + d.total, 0) /
-        Math.max(recentDays.length, 1);
+    const concentration = categoryConcentration(expenses);
 
-    let rollingAverage = average;
+    if (concentration) {
 
-    const predictions = [];
+        const totals = concentration.category_totals;
 
-    let totalPredicted = 0;
+        const totalSpent = Object.values(totals)
+            .reduce((sum, value) => sum + value, 0);
 
-    for (let i = 1; i <= days; i++) {
+        Object.entries(totals).forEach(([category, amount]) => {
 
-        const date = new Date();
+            const percentage = (amount / totalSpent) * 100;
 
-        date.setDate(date.getDate() + i);
+            const benchmark =
+                CATEGORY_BENCHMARKS[category] ||
+                DEFAULT_BENCHMARK;
 
-        const weekend =
-            date.getDay() === 0 ||
-            date.getDay() === 6;
+            if (percentage > benchmark) {
 
-        let prediction = rollingAverage;
+                const monthlySaving =
+                    amount * (SAVINGS_REDUCTION / 100);
 
-        if (weekend) {
+                suggestions.push({
 
-            prediction *= 1.10;
+                    type: "category_threshold",
 
-        }
+                    severity:
+                        percentage > benchmark * 1.5
+                            ? "high"
+                            : "medium",
 
-        prediction = Number(prediction.toFixed(2));
+                    title:
+                        `${category} spending is ${percentage.toFixed(1)}%`,
 
-        predictions.push({
+                    message:
+                        `${category} exceeds the recommended ${benchmark}% benchmark.`,
 
-            date: date.toISOString().split("T")[0],
+                    recommendation:
+                        `Reducing ${category} spending by ${SAVINGS_REDUCTION}% could save about ₹${monthlySaving.toFixed(0)}.`,
 
-            predicted_amount: prediction,
+                    data: {
 
-            is_weekend: weekend
+                        category,
+
+                        percentage:
+                            Number(percentage.toFixed(1)),
+
+                        benchmark,
+
+                        monthly_saving:
+                            Number(monthlySaving.toFixed(2))
+
+                    }
+
+                });
+
+            }
 
         });
 
-        totalPredicted += prediction;
+        if (concentration.top3_percentage > 60) {
 
-        rollingAverage =
-            (rollingAverage * 6 + prediction) / 7;
+            suggestions.push({
 
-    }
+                type: "diversification",
 
-    return {
+                severity:
+                    concentration.top3_percentage > 80
+                        ? "high"
+                        : "medium",
 
-        days,
+                title:
+                    "Most spending is concentrated in a few categories",
 
-        total_predicted: Number(totalPredicted.toFixed(2)),
+                message:
+                    `${concentration.top3_categories.join(", ")} account for ${concentration.top3_percentage}% of your spending.`,
 
-        avg_daily_predicted: Number(
-            (totalPredicted / days).toFixed(2)
-        ),
+                recommendation:
+                    "Review your spending distribution across categories.",
 
-        predictions
+                data: concentration
 
-    };
+            });
 
-};
-
-const getPredictionMetrics = () => {
-
-    if (!modelMetrics) {
-
-        return {
-
-            status: "no model trained"
-
-        };
+        }
 
     }
 
-    return {
+    const recurring = recurringExpenses(expenses);
 
-        status: "loaded",
+    if (recurring.length) {
 
-        comparison: {
+        const totalRecurring =
+            recurring.reduce(
+                (sum, item) => sum + item.amount,
+                0
+            );
 
-            linear_regression:
-                modelMetrics.linear_regression,
+        suggestions.push({
 
-            rolling_average_baseline:
-                modelMetrics.rolling_average_baseline
+            type: "subscription_audit",
 
-        },
+            severity: "info",
 
-        winner:
+            title:
+                `${recurring.length} recurring subscriptions detected`,
 
-            modelMetrics.linear_regression.mae <
+            message:
+                `Recurring payments total ₹${totalRecurring.toFixed(2)} per month.`,
 
-            modelMetrics.rolling_average_baseline.mae
+            recommendation:
+                "Review subscriptions that you no longer use.",
 
-                ? "linear_regression"
+            data: recurring
 
-                : "rolling_average"
+        });
 
+    }
+
+    try {
+
+        const alerts =
+            detectAnomalies(expenses);
+
+        alerts
+            .filter(alert => alert.severity === "high")
+            .slice(0, 3)
+            .forEach(alert => {
+
+                suggestions.push({
+
+                    type: "anomaly_followup",
+
+                    severity: "high",
+
+                    title:
+                        `Review ₹${alert.amount} transaction`,
+
+                    message:
+                        alert.message,
+
+                    recommendation:
+                        "Verify this transaction if it looks unusual.",
+
+                    data: alert
+
+                });
+
+            });
+
+    } catch (err) {}
+
+    try {
+
+        const forecast =
+            predictNextDays(expenses, 30);
+
+        const trend =
+            monthlyTrend(expenses);
+
+        if (
+            trend.length &&
+            forecast.total_predicted
+        ) {
+
+            const previous =
+                trend[trend.length - 1].total;
+
+            const predicted =
+                forecast.total_predicted;
+
+            const increase =
+                ((predicted - previous) /
+                    Math.max(previous, 1)) * 100;
+
+            if (increase > 10) {
+
+                suggestions.push({
+
+                    type: "forecast_alert",
+
+                    severity:
+                        increase > 25
+                            ? "high"
+                            : "medium",
+
+                    title:
+                        `Forecast spending may increase by ${increase.toFixed(1)}%`,
+
+                    message:
+                        "Predicted spending is higher than your recent monthly trend.",
+
+                    recommendation:
+                        "Monitor your expenses before month-end.",
+
+                    data: {
+
+                        predicted,
+
+                        previous,
+
+                        increase:
+                            Number(increase.toFixed(1))
+
+                    }
+
+                });
+
+            }
+
+        }
+
+    } catch (err) {}
+
+    const order = {
+        high: 0,
+        medium: 1,
+        low: 2,
+        info: 3
     };
+
+    suggestions.sort(
+        (a, b) =>
+            order[a.severity] -
+            order[b.severity]
+    );
+
+    return suggestions;
 
 };
 
 module.exports = {
-
-    trainPredictor,
-
-    predictNextDays,
-
-    getPredictionMetrics
-
+    generateSuggestions
 };
